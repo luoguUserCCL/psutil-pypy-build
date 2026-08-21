@@ -29,24 +29,45 @@ jobs:
           "%PYPY_DIR%\python.exe" -m ensurepip --upgrade
           "%PYPY_DIR%\python.exe" -m pip install wheel
 
-      - name: Download psutil 7.2.2 source
+      - name: Download and extract psutil 7.2.2
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://files.pythonhosted.org/packages/source/p/psutil/psutil-7.2.2.tar.gz" -OutFile "psutil-7.2.2.tar.gz"
           tar -xzf "psutil-7.2.2.tar.gz"
+          echo "=== Directory listing after tar ==="
+          Get-ChildItem -Directory | Select-Object Name
+          $dir = Get-ChildItem -Directory | Where-Object { $_.Name -like "psutil-*" } | Select-Object -First 1
+          echo "PSUTIL_DIR=$($dir.Name)" >> $env:GITHUB_ENV
+          echo "Found psutil dir: $($dir.Name)"
 
-      - name: Patch setup.py with Python
-        shell: cmd
+      - name: Patch setup.py
+        shell: pwsh
         run: |
-          "%PYPY_DIR%\python.exe" -c "import re; f=open('psutil-7.2.2/setup.py','r'); c=f.read(); f.close(); c=re.sub(r'def get_long_description\(\):.*?(?=^def |\Z)', 'def get_long_description():\n    readme = os.path.join(HERE, \"README.rst\")\n    if os.path.exists(readme):\n        with open(readme, \"r\", encoding=\"utf-8\") as f:\n            return f.read()\n    return \"\"\n\n', c, flags=re.DOTALL); f=open('psutil-7.2.2/setup.py','w'); f.write(c); f.close(); print('Patched')"
+          $dir = $env:PSUTIL_DIR
+          $setupPath = "$dir/setup.py"
+          $setup = Get-Content $setupPath -Raw
+          # Find and replace get_long_description function
+          $pattern = 'def get_long_description\(\):[\s\S]*?return stdout'
+          $replacement = @"
+def get_long_description():
+    readme = os.path.join(HERE, 'README.rst')
+    if os.path.exists(readme):
+        with open(readme, 'r', encoding='utf-8') as f:
+            return f.read()
+    return ""
+"@
+          $setup = $setup -replace $pattern, $replacement
+          Set-Content $setupPath $setup -NoNewline
+          echo "Patched $setupPath"
 
       - name: Build wheel
-        shell: cmd
+        shell: pwsh
         run: |
-          cd psutil-7.2.2
-          "%PYPY_DIR%\python.exe" setup.py bdist_wheel
+          $dir = $env:PSUTIL_DIR
+          cd $dir
+          & "$env:PYPY_DIR\python.exe" setup.py bdist_wheel
           cd ..
-          copy psutil-7.2.2\dist\*.whl .
+          copy "$dir\dist\*.whl" .
 
       - name: Verify
         shell: cmd
