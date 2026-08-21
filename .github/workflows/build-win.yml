@@ -35,13 +35,10 @@ jobs:
           Invoke-WebRequest -Uri "https://files.pythonhosted.org/packages/source/p/psutil/psutil-7.2.2.tar.gz" -OutFile "psutil-7.2.2.tar.gz"
           tar -xzf "psutil-7.2.2.tar.gz"
 
-      - name: Patch setup.py
-        shell: pwsh
+      - name: Patch setup.py with Python
+        shell: cmd
         run: |
-          $setup = Get-Content "psutil-7.2.2/setup.py" -Raw
-          $setup = $setup -replace 'def get_long_description\(\):[\s\S]*?return stdout', 'def get_long_description():`n    readme = os.path.join(HERE, ''README.rst'')`n    if os.path.exists(readme):`n        with open(readme, ''r'', encoding=''utf-8'') as f:`n            return f.read()`n    return ""'
-          Set-Content "psutil-7.2.2/setup.py" $setup -NoNewline
-          Write-Host "Patched setup.py"
+          "%PYPY_DIR%\python.exe" -c "import re; f=open('psutil-7.2.2/setup.py','r'); c=f.read(); f.close(); c=re.sub(r'def get_long_description\(\):.*?(?=^def |\Z)', 'def get_long_description():\n    readme = os.path.join(HERE, \"README.rst\")\n    if os.path.exists(readme):\n        with open(readme, \"r\", encoding=\"utf-8\") as f:\n            return f.read()\n    return \"\"\n\n', c, flags=re.DOTALL); f=open('psutil-7.2.2/setup.py','w'); f.write(c); f.close(); print('Patched')"
 
       - name: Build wheel
         shell: cmd
