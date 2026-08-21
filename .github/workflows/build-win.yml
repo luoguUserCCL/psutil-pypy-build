@@ -1,4 +1,4 @@
-name: Build psutil >=7 for PyPy 3.11 (Windows MSVC)
+name: Build psutil 7.2.2 for PyPy 3.11 (Windows MSVC)
 
 on:
   workflow_dispatch:
@@ -12,69 +12,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download and setup PyPy 3.11
-        shell: pwsh
-        run: |
-          $url = "https://downloads.python.org/pypy/pypy3.11-v7.3.23-win64.zip"
-          $zip = "pypy3.11.zip"
-          Invoke-WebRequest -Uri $url -OutFile $zip
-          Expand-Archive -Path $zip -DestinationPath .
-          Rename-Item -Path "pypy3.11-v7.3.23-win64" -NewName "pypy3.11"
-          $pypyDir = Resolve-Path "pypy3.11"
-          echo "PYPY_DIR=$pypyDir" >> $env:GITHUB_ENV
-
-      - name: Ensure pip
+      - name: Download PyPy 3.11
         shell: cmd
         run: |
-          "%PYPY_DIR%\python.exe" -m ensurepip --upgrade
-          "%PYPY_DIR%\python.exe" -m pip install wheel
+          curl -s "https://downloads.python.org/pypy/pypy3.11-v7.3.23-win64.zip" -o "pypy.zip"
+          7z x "pypy.zip"
+          ren "pypy3.11-v7.3.23-win64" "pypy3.11"
 
-      - name: Download and extract psutil 7.2.2
-        shell: pwsh
+      - name: Download psutil release-7.2.2 from GitHub
+        shell: cmd
         run: |
-          Invoke-WebRequest -Uri "https://files.pythonhosted.org/packages/source/p/psutil/psutil-7.2.2.tar.gz" -OutFile "psutil-7.2.2.tar.gz"
-          tar -xzf "psutil-7.2.2.tar.gz"
-          echo "=== Directory listing after tar ==="
-          Get-ChildItem -Directory | Select-Object Name
-          $dir = Get-ChildItem -Directory | Where-Object { $_.Name -like "psutil-*" } | Select-Object -First 1
-          echo "PSUTIL_DIR=$($dir.Name)" >> $env:GITHUB_ENV
-          echo "Found psutil dir: $($dir.Name)"
-
-      - name: Patch setup.py
-        shell: pwsh
-        run: |
-          $dir = $env:PSUTIL_DIR
-          $setupPath = "$dir/setup.py"
-          $setup = Get-Content $setupPath -Raw
-          # Find and replace get_long_description function
-          $pattern = 'def get_long_description\(\):[\s\S]*?return stdout'
-          $replacement = @"
-def get_long_description():
-    readme = os.path.join(HERE, 'README.rst')
-    if os.path.exists(readme):
-        with open(readme, 'r', encoding='utf-8') as f:
-            return f.read()
-    return ""
-"@
-          $setup = $setup -replace $pattern, $replacement
-          Set-Content $setupPath $setup -NoNewline
-          echo "Patched $setupPath"
+          curl -s "https://github.com/giampaolo/psutil/archive/refs/tags/release-7.2.2.zip" -o "psutil.zip"
+          7z x "psutil.zip"
 
       - name: Build wheel
-        shell: pwsh
+        shell: cmd
         run: |
-          $dir = $env:PSUTIL_DIR
-          cd $dir
-          & "$env:PYPY_DIR\python.exe" setup.py bdist_wheel
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          set INCLUDE=%CD%\pypy3.11\include;%INCLUDE%
+          set LIB=%CD%\pypy3.11\libs;%LIB%
+          set PATH=%CD%\pypy3.11;%PATH%
+          cd psutil-release-7.2.2
+          pypy3.11 setup.py bdist_wheel
+          copy dist\*.whl ..\
           cd ..
-          copy "$dir\dist\*.whl" .
 
       - name: Verify
         shell: cmd
         run: |
+          set PATH=%CD%\pypy3.11;%PATH%
           for %%f in (*.whl) do (
-            "%PYPY_DIR%\python.exe" -m pip install %%f
-            "%PYPY_DIR%\python.exe" -c "import psutil; print('OK:', psutil.__version__, psutil.cpu_count())"
+            pypy3.11 -m pip install %%f
+            pypy3.11 -c "import psutil; print('OK:', psutil.__version__, psutil.cpu_count())"
             goto :done
           )
           :done
@@ -83,10 +52,10 @@ def get_long_description():
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: psutil7-pypy311-win
+          name: psutil-7.2.2-pypy311-win
           path: "*.whl"
 
-      - name: Create Release
+      - name: Release
         if: success()
         uses: softprops/action-gh-release@v2
         with:
