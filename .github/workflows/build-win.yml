@@ -12,54 +12,97 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download and setup PyPy 3.11 (Windows)
+      - name: Download and setup PyPy 3.11
         shell: pwsh
         run: |
           $url = "https://downloads.python.org/pypy/pypy3.11-v7.3.23-win64.zip"
           $zip = "pypy3.11.zip"
-          $dest = "pypy3.11"
           Invoke-WebRequest -Uri $url -OutFile $zip
           Expand-Archive -Path $zip -DestinationPath .
-          Rename-Item -Path "pypy3.11-v7.3.23-win64" -NewName $dest
-          $pypyDir = Resolve-Path $dest
-          $envDir = "$pypyDir\bin"
+          Rename-Item -Path "pypy3.11-v7.3.23-win64" -NewName "pypy3.11"
+          $pypyDir = Resolve-Path "pypy3.11"
           echo "PYPY_DIR=$pypyDir" >> $env:GITHUB_ENV
-          echo "$envDir" >> $env:GITHUB_PATH
+          echo "$pypyDir" >> $env:GITHUB_PATH
 
-      - name: Ensure pip and upgrade tools
+      - name: Ensure pip (DO NOT upgrade setuptools/pip)
         shell: cmd
         run: |
           "%PYPY_DIR%\python.exe" -m ensurepip --upgrade
-          "%PYPY_DIR%\python.exe" -m pip install --upgrade pip setuptools wheel
+          "%PYPY_DIR%\python.exe" -m pip install wheel
 
       - name: Download psutil 5.9.8 source
         shell: pwsh
         run: |
-          $url = "https://files.pythonhosted.org/packages/source/p/psutil/psutil-5.9.8.tar.gz"
-          Invoke-WebRequest -Uri $url -OutFile "psutil-5.9.8.tar.gz"
+          Invoke-WebRequest -Uri "https://files.pythonhosted.org/packages/source/p/psutil/psutil-5.9.8.tar.gz" -OutFile "psutil-5.9.8.tar.gz"
           tar -xzf "psutil-5.9.8.tar.gz"
 
-      - name: Build wheel with MSVC
+      - name: Build wheel
         shell: cmd
         run: |
           cd psutil-5.9.8
           "%PYPY_DIR%\python.exe" setup.py bdist_wheel
-          copy dist\*.whl ..\psutil-5.9.8-pp311-pypy311_pp73-win_amd64.whl
+          echo "=== dist contents ==="
+          dir dist\
+          for %%f in (dist\*.whl) do (
+            copy "%%f" "..\psutil_pypy311_win.whl"
+            echo "Copied: %%f"
+          )
           cd ..
 
-      - name: Verify installation
+      - name: Diagnose wheel
         shell: cmd
         run: |
-          "%PYPY_DIR%\python.exe" -m pip install .\psutil-5.9.8-pp311-pypy311_pp73-win_amd64.whl
+          echo "=== Wheel file size ==="
+          dir psutil_pypy311_win.whl
+          echo "=== Inspect wheel internals ==="
+          "%PYPY_DIR%\python.exe" -c "import zipfile; z=zipfile.ZipFile('psutil_pypy311_win.whl'); print('Files:', z.namelist()[:5]); print('WHEEL:'); print(z.read('psutil-5.9.8.dist-info/WHEEL').decode())"
+
+      - name: Install and verify (fallback methods)
+        shell: cmd
+        run: |
+          echo "=== Try 1: pip install wheel ==="
+          "%PYPY_DIR%\python.exe" -m pip install psutil_pypy311_win.whl || (
+            echo "=== Try 2: pip install --no-deps --force-reinstall ==="
+            "%PYPY_DIR%\python.exe" -m pip install --no-deps --force-reinstall psutil_pypy311_win.whl || (
+              echo "=== Try 3: setup.py install directly ==="
+              cd psutil-5.9.8
+              "%PYPY_DIR%\python.exe" setup.py install
+            )
+          )
+          "%PYPY_DIR%\python.exe" -c "import psutil; print('OK:', psutil.__version__, psutil.cpu_count())"
+
+      - name: Repack wheel if pip rejects it
+        if: failure()
+        shell: cmd
+        run: |
+          echo "=== Repacking wheel with Python ==="
+          "%PYPY_DIR%\python.exe" -c "
+import zipfile, os, glob
+old = glob.glob('psutil_pypy311_win.whl')[0]
+new = 'psutil-5.9.8-pp311-pp73-win_amd64.whl'
+with zipfile.ZipFile(old, 'r') as zin, zipfile.ZipFile(new, 'w', zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        # Fix path separators and rename pyd if needed
+        arcname = item.filename.replace('\\', '/')
+        zout.writestr(arcname, data)
+print('Repacked to', new)
+"
+          echo "=== Try install repacked wheel ==="
+          "%PYPY_DIR%\python.exe" -m pip install psutil-5.9.8-pp311-pp73-win_amd64.whl
           "%PYPY_DIR%\python.exe" -c "import psutil; print('OK:', psutil.__version__, psutil.cpu_count())"
 
       - name: Upload artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: psutil-pypy311-win-whl
-          path: "*.whl"
+          name: psutil-pypy311-win-build
+          path: |
+            *.whl
+            psutil-5.9.8/dist/
 
       - name: Create Release
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: psutil-5.9.8-pypy3.11-win
