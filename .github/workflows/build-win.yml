@@ -36,6 +36,8 @@ jobs:
           set INCLUDE=%CD%\pypy3.11\include;%INCLUDE%
           set LIB=%CD%\pypy3.11\libs;%LIB%
           set PATH=%CD%\pypy3.11;%PATH%
+          pypy3.11 -m ensurepip
+          if errorlevel 1 exit /b 1
           pypy3.11 -m pip install wheel
           if errorlevel 1 exit /b 1
           cd psutil-release-7.2.2
