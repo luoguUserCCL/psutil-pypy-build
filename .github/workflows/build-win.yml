@@ -35,13 +35,14 @@ jobs:
           if errorlevel 1 exit /b 1
           set INCLUDE=%CD%\pypy3.11\include;%INCLUDE%
           set LIB=%CD%\pypy3.11\libs;%LIB%
-          set PATH=%CD%\pypy3.11;%PATH%
+          set PATH=%CD%\pypy3.11;%CD%\pypy3.11\Scripts;%PATH%
           pypy3.11 -m ensurepip
           if errorlevel 1 exit /b 1
           pypy3.11 -m pip install --upgrade setuptools wheel
           if errorlevel 1 exit /b 1
-          set DISTUTILS_USE_SDK=1
           cd psutil-release-7.2.2
+          dir psutil\_psutil_windows.c
+          where cl
           pypy3.11 setup.py bdist_wheel -v
           if errorlevel 1 exit /b 1
           copy dist\*.whl ..\
@@ -50,7 +51,7 @@ jobs:
       - name: Verify
         shell: cmd
         run: |
-          set PATH=%CD%\pypy3.11;%PATH%
+          set PATH=%CD%\pypy3.11;%CD%\pypy3.11\Scripts;%PATH%
           for %%f in (*.whl) do (
             pypy3.11 -m pip install %%f
             pypy3.11 -c "import psutil; print('OK:', psutil.__version__, psutil.cpu_count())"
