@@ -22,7 +22,7 @@ jobs:
       - name: Download psutil release-7.2.2 from GitHub
         shell: cmd
         run: |
-          curl -s "https://github.com/giampaolo/psutil/archive/refs/tags/release-7.2.2.zip" -o "psutil.zip"
+          curl -s -L -H "Authorization: token %GITHUB_TOKEN%" "https://github.com/giampaolo/psutil/archive/refs/tags/release-7.2.2.zip" -o "psutil.zip"
           7z x "psutil.zip"
 
       - name: Build wheel
