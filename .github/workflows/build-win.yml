@@ -33,6 +33,9 @@ jobs:
           for /f "usebackq tokens=*" %%i in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSINSTALLDIR=%%i
           call "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvarsall.bat" x64
           if errorlevel 1 exit /b 1
+          for /f "usebackq delims=" %%i in (`dir /b /ad "%VSINSTALLDIR%\VC\Tools\MSVC" ^| sort /r`) do set MSVCVER=%%i & goto :msvc_found
+          :msvc_found
+          set PATH=%VSINSTALLDIR%\VC\Tools\MSVC\%MSVCVER%\bin\Hostx64\x64;%PATH%
           set INCLUDE=%CD%\pypy3.11\include;%INCLUDE%
           set LIB=%CD%\pypy3.11\libs;%LIB%
           set PATH=%CD%\pypy3.11;%CD%\pypy3.11\Scripts;%PATH%
@@ -41,9 +44,7 @@ jobs:
           pypy3.11 -m pip install --upgrade setuptools wheel
           if errorlevel 1 exit /b 1
           cd psutil-release-7.2.2
-          dir psutil\_psutil_windows.c
-          where cl
-          pypy3.11 setup.py bdist_wheel -v
+          pypy3.11 setup.py bdist_wheel
           if errorlevel 1 exit /b 1
           copy dist\*.whl ..\
           cd ..
