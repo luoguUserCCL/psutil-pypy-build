@@ -24,16 +24,23 @@ jobs:
         run: |
           curl -s -L -H "Authorization: token %GITHUB_TOKEN%" "https://github.com/giampaolo/psutil/archive/refs/tags/release-7.2.2.zip" -o "psutil.zip"
           7z x "psutil.zip"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build wheel
         shell: cmd
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          for /f "usebackq tokens=*" %%i in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSINSTALLDIR=%%i
+          call "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvarsall.bat" x64
+          if errorlevel 1 exit /b 1
           set INCLUDE=%CD%\pypy3.11\include;%INCLUDE%
           set LIB=%CD%\pypy3.11\libs;%LIB%
           set PATH=%CD%\pypy3.11;%PATH%
+          pypy3.11 -m pip install wheel
+          if errorlevel 1 exit /b 1
           cd psutil-release-7.2.2
           pypy3.11 setup.py bdist_wheel
+          if errorlevel 1 exit /b 1
           copy dist\*.whl ..\
           cd ..
 
