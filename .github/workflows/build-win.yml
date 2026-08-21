@@ -47,6 +47,12 @@ jobs:
           echo ==== PATH (truncated) ====
           echo %PATH:~0,400%
 
+          echo ==== check MSVC dir under VSINSTALLDIR ====
+          dir "%VSINSTALLDIR%\VC\Tools\MSVC" /b || echo "no MSVC dir"
+
+          echo ==== try recursive find cl.exe under VSINSTALLDIR ====
+          where /R "%VSINSTALLDIR%" cl.exe || echo "cl.exe not found under VSINSTALLDIR"
+
           set DISTUTILS_USE_SDK=1
           set INCLUDE=%CD%\pypy3.11\include;%INCLUDE%
           set LIB=%CD%\pypy3.11\libs;%LIB%
