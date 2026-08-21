@@ -34,10 +34,6 @@ jobs:
           call "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvarsall.bat" x64
           if errorlevel 1 exit /b 1
 
-          for /f "usebackq tokens=*" %%i in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -find VC\Tools\MSVC\*\bin\HostX86\x64\cl.exe`) do set CL_EXE=%%i
-          for %%i in ("%CL_EXE%") do set CL_DIR=%%~dpi
-          set PATH=%CL_DIR%;%PATH%
-
           set INCLUDE=%CD%\pypy3.11\include;%INCLUDE%
           set LIB=%CD%\pypy3.11\libs;%LIB%
           set PATH=%CD%\pypy3.11;%CD%\pypy3.11\Scripts;%PATH%
