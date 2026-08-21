@@ -1,4 +1,4 @@
-name: Build psutil for PyPy 3.11 (Windows MSVC)
+name: Build psutil >=7 for PyPy 3.11 (Windows MSVC)
 
 on:
   workflow_dispatch:
@@ -22,102 +22,58 @@ jobs:
           Rename-Item -Path "pypy3.11-v7.3.23-win64" -NewName "pypy3.11"
           $pypyDir = Resolve-Path "pypy3.11"
           echo "PYPY_DIR=$pypyDir" >> $env:GITHUB_ENV
-          echo "$pypyDir" >> $env:GITHUB_PATH
 
-      - name: Ensure pip (DO NOT upgrade setuptools/pip)
+      - name: Ensure pip
         shell: cmd
         run: |
           "%PYPY_DIR%\python.exe" -m ensurepip --upgrade
           "%PYPY_DIR%\python.exe" -m pip install wheel
 
-      - name: Download psutil 5.9.8 source
+      - name: Download psutil 7.2.2 source
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://files.pythonhosted.org/packages/source/p/psutil/psutil-5.9.8.tar.gz" -OutFile "psutil-5.9.8.tar.gz"
-          tar -xzf "psutil-5.9.8.tar.gz"
+          Invoke-WebRequest -Uri "https://files.pythonhosted.org/packages/source/p/psutil/psutil-7.2.2.tar.gz" -OutFile "psutil-7.2.2.tar.gz"
+          tar -xzf "psutil-7.2.2.tar.gz"
+
+      - name: Patch setup.py
+        shell: pwsh
+        run: |
+          $setup = Get-Content "psutil-7.2.2/setup.py" -Raw
+          $setup = $setup -replace 'def get_long_description\(\):[\s\S]*?return stdout', 'def get_long_description():`n    readme = os.path.join(HERE, ''README.rst'')`n    if os.path.exists(readme):`n        with open(readme, ''r'', encoding=''utf-8'') as f:`n            return f.read()`n    return ""'
+          Set-Content "psutil-7.2.2/setup.py" $setup -NoNewline
+          Write-Host "Patched setup.py"
 
       - name: Build wheel
         shell: cmd
         run: |
-          cd psutil-5.9.8
+          cd psutil-7.2.2
           "%PYPY_DIR%\python.exe" setup.py bdist_wheel
-          echo === dist contents ===
-          dir dist\
-          for %%f in (dist\*.whl) do (
-            copy "%%f" "..\psutil_pypy311_win.whl"
-            echo Copied: %%f
-          )
           cd ..
+          copy psutil-7.2.2\dist\*.whl .
 
-      - name: Diagnose wheel
+      - name: Verify
         shell: cmd
         run: |
-          echo === Wheel file size ===
-          dir psutil_pypy311_win.whl
-          echo === Inspect wheel internals ===
-          "%PYPY_DIR%\python.exe" -c "import zipfile; z=zipfile.ZipFile('psutil_pypy311_win.whl'); print('Files:', z.namelist()[:5]); print('WHEEL:'); print(z.read('psutil-5.9.8.dist-info/WHEEL').decode())"
-
-      - name: Install and verify (fallback methods)
-        shell: cmd
-        run: |
-          echo === Try 1: pip install wheel ===
-          "%PYPY_DIR%\python.exe" -m pip install psutil_pypy311_win.whl || (
-            echo === Try 2: pip install --no-deps --force-reinstall ===
-            "%PYPY_DIR%\python.exe" -m pip install --no-deps --force-reinstall psutil_pypy311_win.whl || (
-              echo === Try 3: setup.py install directly ===
-              cd psutil-5.9.8
-              "%PYPY_DIR%\python.exe" setup.py install
-            )
+          for %%f in (*.whl) do (
+            "%PYPY_DIR%\python.exe" -m pip install %%f
+            "%PYPY_DIR%\python.exe" -c "import psutil; print('OK:', psutil.__version__, psutil.cpu_count())"
+            goto :done
           )
-          "%PYPY_DIR%\python.exe" -c "import psutil; print('OK:', psutil.__version__, psutil.cpu_count())"
-
-      - name: Repack wheel if pip rejects it
-        if: failure()
-        shell: pwsh
-        run: |
-          $old = Get-Item "psutil_pypy311_win.whl"
-          $new = "psutil-5.9.8-pp311-pp73-win_amd64.whl"
-          Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $zip = [System.IO.Compression.ZipFile]::OpenRead($old.FullName)
-          $newZip = [System.IO.Compression.ZipFile]::Open($new, "Create")
-          foreach ($entry in $zip.Entries) {
-            $name = $entry.FullName -replace '\\', '/'
-            $stream = $entry.Open()
-            $reader = New-Object System.IO.StreamReader($stream)
-            $bytes = [System.Text.Encoding]::UTF8.GetBytes($reader.ReadToEnd())
-            $newEntry = $newZip.CreateEntry($name)
-            $newStream = $newEntry.Open()
-            $newStream.Write($bytes, 0, $bytes.Length)
-            $newStream.Close()
-            $reader.Close()
-            $stream.Close()
-          }
-          $zip.Dispose()
-          $newZip.Dispose()
-          Write-Host "Repacked to $new"
-
-      - name: Try install repacked wheel
-        if: failure()
-        shell: cmd
-        run: |
-          "%PYPY_DIR%\python.exe" -m pip install psutil-5.9.8-pp311-pp73-win_amd64.whl
-          "%PYPY_DIR%\python.exe" -c "import psutil; print('OK:', psutil.__version__, psutil.cpu_count())"
+          :done
 
       - name: Upload artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: psutil-pypy311-win-build
-          path: |
-            *.whl
-            psutil-5.9.8/dist/
+          name: psutil7-pypy311-win
+          path: "*.whl"
 
       - name: Create Release
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: psutil-5.9.8-pypy3.11-win
-          name: "psutil 5.9.8 for PyPy 3.11 v7.3.23 (Windows)"
+          tag_name: psutil-7.2.2-pypy3.11-win
+          name: "psutil 7.2.2 for PyPy 3.11 v7.3.23 (Windows)"
           files: "*.whl"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
