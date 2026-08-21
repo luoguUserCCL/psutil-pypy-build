@@ -1,0 +1,69 @@
+name: Build psutil for PyPy 3.11 (Windows MSVC)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download and setup PyPy 3.11 (Windows)
+        shell: pwsh
+        run: |
+          $url = "https://downloads.python.org/pypy/pypy3.11-v7.3.23-win64.zip"
+          $zip = "pypy3.11.zip"
+          $dest = "pypy3.11"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath .
+          Rename-Item -Path "pypy3.11-v7.3.23-win64" -NewName $dest
+          $pypyDir = Resolve-Path $dest
+          $envDir = "$pypyDir\bin"
+          echo "PYPY_DIR=$pypyDir" >> $env:GITHUB_ENV
+          echo "$envDir" >> $env:GITHUB_PATH
+
+      - name: Ensure pip and upgrade tools
+        shell: cmd
+        run: |
+          "%PYPY_DIR%\python.exe" -m ensurepip --upgrade
+          "%PYPY_DIR%\python.exe" -m pip install --upgrade pip setuptools wheel
+
+      - name: Download psutil 5.9.8 source
+        shell: pwsh
+        run: |
+          $url = "https://files.pythonhosted.org/packages/source/p/psutil/psutil-5.9.8.tar.gz"
+          Invoke-WebRequest -Uri $url -OutFile "psutil-5.9.8.tar.gz"
+          tar -xzf "psutil-5.9.8.tar.gz"
+
+      - name: Build wheel with MSVC
+        shell: cmd
+        run: |
+          cd psutil-5.9.8
+          "%PYPY_DIR%\python.exe" setup.py bdist_wheel
+          copy dist\*.whl ..\psutil-5.9.8-pp311-pypy311_pp73-win_amd64.whl
+          cd ..
+
+      - name: Verify installation
+        shell: cmd
+        run: |
+          "%PYPY_DIR%\python.exe" -m pip install .\psutil-5.9.8-pp311-pypy311_pp73-win_amd64.whl
+          "%PYPY_DIR%\python.exe" -c "import psutil; print('OK:', psutil.__version__, psutil.cpu_count())"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: psutil-pypy311-win-whl
+          path: "*.whl"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: psutil-5.9.8-pypy3.11-win
+          name: "psutil 5.9.8 for PyPy 3.11 v7.3.23 (Windows)"
+          files: "*.whl"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
