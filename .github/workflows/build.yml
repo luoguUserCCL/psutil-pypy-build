@@ -1,0 +1,51 @@
+name: Build psutil for PyPy 3.11
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc build-essential linux-headers-$(uname -r)
+
+      - name: Download PyPy 3.11
+        run: |
+          wget -q --timeout=60 https://downloads.python.org/pypy/pypy3.11-v7.3.23-linux64.tar.bz2
+          tar -xjf pypy3.11-v7.3.23-linux64.tar.bz2
+          sudo ln -sf $(pwd)/pypy3.11-v7.3.23-linux64/bin/pypy3.11 /usr/local/bin/pypy3.11
+          pypy3.11 -m ensurepip --upgrade
+          pypy3.11 -m pip install --upgrade pip setuptools wheel
+
+      - name: Build psutil 5.9.8 (fallback, avoids PyPy 3.11 CheckError)
+        run: |
+          wget -q https://files.pythonhosted.org/packages/source/p/psutil/psutil-5.9.8.tar.gz
+          tar -xzf psutil-5.9.8.tar.gz
+          cd psutil-5.9.8
+          pypy3.11 setup.py bdist_wheel
+          cp dist/*.whl ../psutil-5.9.8-pp311-pypy311_pp73-linux_x86_64.whl
+
+      - name: Verify
+        run: |
+          pypy3.11 -m pip install ./psutil-5.9.8-pp311-pypy311_pp73-linux_x86_64.whl
+          pypy3.11 -c "import psutil; print('OK:', psutil.__version__, psutil.cpu_count())"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: psutil-pypy311-whl
+          path: "*.whl"
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: psutil-5.9.8-pypy3.11
+          name: "psutil 5.9.8 for PyPy 3.11 v7.3.23"
+          files: "*.whl"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
