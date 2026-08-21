@@ -27,29 +27,36 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build wheel
+      - name: Build wheel (with MSVC checks)
         shell: cmd
         run: |
-          for /f "usebackq tokens=*" %%i in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSINSTALLDIR=%%i
-          call "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvarsall.bat" x64
-          if errorlevel 1 exit /b 1
+          echo ==== vswhere output ====
+          "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath || echo "vswhere: no matching VS with VC tools"
+          for /f "usebackq tokens=*" %%i in (`"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VSINSTALLDIR=%%i
+          echo VSINSTALLDIR=%VSINSTALLDIR%
 
-          for /f "usebackq tokens=*" %%i in (`where cl`) do set CL_PATH=%%i
-          set CC=%CL_PATH%
+          if not defined VSINSTALLDIR (
+            echo ERROR: VS with VC tools not found. Ensure runner has Visual C++ workload installed.
+            exit /b 1
+          )
+
+          call "%VSINSTALLDIR%\VC\Auxiliary\Build\vcvarsall.bat" x64 || (echo ERROR: vcvarsall failed & exit /b 1)
+
+          echo ==== after vcvarsall: where cl ====
+          where cl || (echo ERROR: cl.exe not found in PATH after vcvarsall & exit /b 1)
+          echo ==== PATH (truncated) ====
+          echo %PATH:~0,400%
+
           set DISTUTILS_USE_SDK=1
-
           set INCLUDE=%CD%\pypy3.11\include;%INCLUDE%
           set LIB=%CD%\pypy3.11\libs;%LIB%
           set PATH=%CD%\pypy3.11;%CD%\pypy3.11\Scripts;%PATH%
 
-          pypy3.11 -m ensurepip
-          if errorlevel 1 exit /b 1
-          pypy3.11 -m pip install --upgrade setuptools wheel
-          if errorlevel 1 exit /b 1
+          pypy3.11 -m ensurepip || exit /b 1
+          pypy3.11 -m pip install --upgrade setuptools wheel || exit /b 1
 
           cd psutil-release-7.2.2
-          pypy3.11 setup.py bdist_wheel
-          if errorlevel 1 exit /b 1
+          pypy3.11 setup.py bdist_wheel || exit /b 1
           copy dist\*.whl ..\
           cd ..
 
